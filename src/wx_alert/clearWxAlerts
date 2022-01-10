@@ -1,0 +1,47 @@
+#!/bin/bash
+#
+# clearWxAlert - allstar wxscripts
+#
+#   by w0anm
+#
+# Clears and removes playWxAlertBg lockfiles.  This script should be used
+# when debugging or during a force clear of alerts.  The main function
+# is to remove all of the playWxAlertBg programs, remove all lock files.
+#
+########################
+# $Id: clearWxAlerts 12 2014-12-31 18:23:49Z w0anm $
+
+# Load config file
+WEATHER="/usr/local/etc/wx"
+
+if [ -f ${WEATHER}/wx_scripts.conf ] ; then
+    source ${WEATHER}/wx_scripts.conf
+else
+    echo "Missing ${WEATHER}/wx_scripts.conf file, aborting..."
+    exit 1
+fi
+
+# Variables
+WXALERTDIR=${WXALERT_SPOOLDIR}
+
+# Check if any playWxAlertBg files are running, if so, killem
+echo -n "Stopping Weather Alert Messages..."
+killall playWxAlertBg &> /dev/null 2>&1
+echo "     Done."
+
+
+# cleanup the lock files
+echo -n "Removing lock files from /tmp..."
+rm -f /tmp/playWxAlertBg-lock &> /dev/null 2>&1
+echo "     Done."
+
+# clean up the Alert directories
+echo -n "Cleaning up the alert weather directories..."
+rm -f $WXALERTDIR/*/* &> /dev/null 2>&1
+echo "     Done."
+
+# clean up the tmp Wx Directories
+echo -n "Removing temporary files in /tmp/wx.."
+rm -f /tmp/wx/alert/* &> /dev/null 2>&1
+echo "     Done."
+

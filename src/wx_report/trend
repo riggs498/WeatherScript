@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# trend  - allstar wxscripts
+#
+#  by w0anm
+#
+# This script records the pressure trends for the wx reports.
+# pressure trending, called by cron, every 6 hours.
+# "saved_pressure.var" is created by getWxRpt_ug
+#
+######################
+# $Id: trend 12 2014-12-31 18:23:49Z w0anm $
+
+# if Weather Underground _STN not an argument, then error.
+if [ "$1" = "" ] ; then
+    echo "Missing Argument, need wx underground station id.."
+    echo
+    exit 1
+else
+    WX_UNDERGRND_STN=$1
+fi
+
+# report/working dirs
+UG_WX_WRKING_DIR=/tmp/wx/wxreport_ug/${WX_UNDERGRND_STN}
+
+if [ ! -d $UG_WX_WRKING_DIR ] ; then
+    mkdir -p $UG_WX_WRKING_DIR
+fi
+
+if [ ! -f $UG_WX_WRKING_DIR/trend_pressure.var ] ; then
+    cp $UG_WX_WRKING_DIR/saved_pressure.var $UG_WX_WRKING_DIR/trend_pressure.var
+    exit 0
+else
+    cp $UG_WX_WRKING_DIR/trend_pressure.var $UG_WX_WRKING_DIR/old_pressure.var
+    rm $UG_WX_WRKING_DIR/trend_pressure.var
+fi
+
+

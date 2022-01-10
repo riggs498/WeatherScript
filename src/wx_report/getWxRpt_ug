@@ -1,0 +1,476 @@
+#!/bin/bash
+#
+# getWxRpt_ug - allstar wxscripts
+#
+#  by w0anm
+#
+# This script pulls from local underground weather stations and converts
+# to audio using online google text to speech converter.
+#
+# ---------------
+# Copyright (C) 2015, 2016 Christopher Kovacs, W0ANM
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see http://www.gnu.org/licenses/.
+# ---------------
+
+######################
+# get wx report
+
+# renice the proceses to a lower priority
+renice -n 19 -p $$
+
+WEATHER=/usr/local/etc/wx
+
+# get date info for last update information
+DATE=`date +%Y.%m.%d.\%H\%M`
+
+# sound files
+SOUND_DIR=/usr/local/share/sound/wx
+
+# Load config file
+if [ -f ${WEATHER}/wx_scripts.conf ] ; then
+    source ${WEATHER}/wx_scripts.conf
+else
+    echo "Missing ${WEATHER}/wx_scripts.conf file, aborting..."
+    exit 1
+fi
+
+# System
+# PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/vendor_perl:/usr/bin/core_perl
+
+# wget source location
+WGET="/usr/bin/wget"
+
+# if Weather Underground _STN not an argument, then error.
+if [ "$1" = "" ] ; then
+    echo "Missing Argument, need wx underground station id.."
+    echo
+    exit 1
+else
+    WX_UNDERGRND_STN=${1^^}
+fi
+
+# Various files and directories
+# sound creation directory
+UG_WX_SOUND_DIR=/tmp/wx/wxreport_ug/${WX_UNDERGRND_STN}
+
+# WX script directory
+UG_WX_DIR=/usr/local/etc/wx
+
+# tmp directory
+UG_WX_WRKING_DIR=/tmp/wx/wxreport_ug/${WX_UNDERGRND_STN}
+
+# make sure custom audio wx directory is created
+if [ ! -d  $UG_WX_SOUND_DIR ] ; then
+    mkdir -p $UG_WX_SOUND_DIR
+fi
+
+# make sure custom working wx directory is created
+if [ ! -d  $UG_WX_WRKING_DIR ] ; then
+    mkdir -p $UG_WX_WRKING_DIR
+fi
+
+# parsing_list.txt file lists weather items to capture
+P_LIST=$UG_WX_DIR/parsing_list.txt
+
+# weather underground web information.  ID value is important
+# ID set from wx_scripts.conf
+URL="http://api.wunderground.com/weatherstation/WXCurrentObXML.asp?ID=${WX_UNDERGRND_STN}"
+
+if [ -f "${UG_WX_SOUND_DIR}/cur_WxRpt_ug.gsm" ] ; then
+    rm ${UG_WX_SOUND_DIR}/cur_WxRpt_ug.gsm
+fi
+
+number_conversion () {
+   # debug=yes
+   cnumb=$1
+   gsmfile_out=/tmp/numbers.gsm
+
+   if [ -f "$gsmfile_out" ] ; then
+       rm -f $gsmfile_out
+   fi
+
+   # strip off minus
+   if [ "${cnumb:0:1}" = "-" ] ; then
+       minus="true"
+       cnumb=${cnumb/#-/}
+   fi
+
+   # find dec position and create an array called "dig"
+   size=${#cnumb}
+   for digit in `seq 0 $size` ; do
+       # check if decimal and get position
+       if [ "${cnumb:$digit:1}" = "." ] ; then
+           dec_position=$digit
+       fi
+       dig[$digit]=${cnumb:$digit:1}
+   done
+
+   if [ ! -z "$dec_position" ] ; then
+       # strip it.
+       decimal=yes
+       decimal_val=${cnumb#*.}
+       cnumb=${cnumb%.*}
+   fi
+
+   # if minus, start with "minus" in gsm
+   if [ "$minus" = "true" ] ; then
+       cat $SOUND_DIR/minus.gsm >> $gsmfile_out
+   fi
+
+   # convert hundreds
+   if [ "$(($cnumb))" -gt "100" ] ; then
+       tmp_cnumb=$(echo "${cnumb}-100" | bc -l) ;
+       cat $SOUND_DIR/1.gsm hundred.gsm  >> $gsmfile_out
+   else
+       tmp_cnumb=$cnumb
+   fi
+
+   # convert tens and ones
+   if  [ "$(($tmp_cnumb))" -lt "20" ] ; then
+       cat $SOUND_DIR/${tmp_cnumb}.gsm >> $gsmfile_out
+
+   else
+       tmp_cnumb10=${tmp_cnumb:0:1}
+       cnumb1=${tmp_cnumb:1:1}
+       cnumb10=$(echo "${tmp_cnumb10}*10" | bc -l)
+       cat $SOUND_DIR/${cnumb10}.gsm >> $gsmfile_out
+       # if number is 0 then no output (like 30)
+       if [ ${cnumb1} != "0" ] ; then
+           cat $SOUND_DIR/${cnumb1}.gsm >> $gsmfile_out
+       fi
+   fi
+
+   # create  decimal gsm output
+   if [ ! -z "$dec_position" ] ; then
+       # get dec values
+         end=$(expr $size - 1)
+       for digit in `seq $dec_position $end` ; do
+          if [ "${dig[$digit]}" = "." ] ; then
+             cat $SOUND_DIR/point.gsm >> $gsmfile_out
+          else
+             cat $SOUND_DIR/${dig[$digit]}.gsm >> $gsmfile_out
+          fi
+       done
+   fi
+
+   if [ "$debug" = "yes" ] ; then
+      echo "minus=$minus"
+      echo "Tens - cnumb10 --> [${cnumb10}]"
+      echo "Ones - cnumb1 --> [${cnumb1}]"
+
+      # display the array
+      if [ ! -z "$dec_position" ] ; then
+         end=$(expr $size - 1)
+         for digit in `seq $dec_position $end` ; do
+             echo "-------------------------------"
+             echo "dig array --> ${dig[$digit]}"
+             if [ "${dig[$digit]}" = "." ] ; then
+                echo "."
+             fi
+             echo "decimal($digit) -> ${dig[$digit]}"
+             echo "-------------------------------"
+         done
+     fi
+   fi
+}
+
+
+#----------------------------- Main program -----------------------------
+
+# clean up first
+rm -f $UG_WX_PTREND/var.src $UG_WX_WRKING_DIR/var.src $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt $UG_WX_SOUND_DIR/conv_current_wx.txt
+
+# Get weather information
+
+# copy file for saytime
+if [ -f ${UG_WX_SOUND_DIR}/${WX_UNDERGRND_STN}.xml ] ; then
+  cp ${UG_WX_SOUND_DIR}/${WX_UNDERGRND_STN}.xml ${UG_WX_SOUND_DIR}/${WX_UNDERGRND_STN}_saytemp.xml
+fi
+
+$WGET -q $URL -O - > ${UG_WX_SOUND_DIR}/${WX_UNDERGRND_STN}.xml
+
+# parse the list and extract the variables
+for ITEM in `cat "$P_LIST"  | awk '{ print $1 }'`
+  do
+    VARIABLE=`grep -m 1 $ITEM ${UG_WX_SOUND_DIR}/${WX_UNDERGRND_STN}.xml |  awk 'BEGIN { FS = "<" } { print $2 } ' | sed 's/>/ /g' | awk '{ print $1}'`
+
+    VALUE=`grep -m 1 $ITEM ${UG_WX_SOUND_DIR}/${WX_UNDERGRND_STN}.xml | awk ' BEGIN { FS = "/" } { print $1 }'|  awk 'BEGIN { FS = ">" } { print $2 } ' | awk ' BEGIN { FS = "<" } { print $1 }'`
+
+    echo "${VARIABLE}=\"${VALUE}\"" >> $UG_WX_WRKING_DIR/var.src
+
+done
+
+# initialize the variables (import them)
+source $UG_WX_WRKING_DIR/var.src
+
+# Save current pressure and get current pressure trend for pressure info
+cur_pressure_mb=$pressure_mb
+cur_pressure_in=$pressure_in
+
+if [ -f $UG_WX_WRKING_DIR/old_pressure.var ] ; then
+    # get old "saved pressure_in/pressure_mb" value, for pressure trends
+    # this is created by crontab every 6 hours.
+    source $UG_WX_WRKING_DIR/old_pressure.var
+
+    # convert to integer (may change to *100)
+    cur_pressure=$(echo "${cur_pressure_mb}*100" | bc)
+    pressure=$(echo "${pressure_mb}*100" | bc)
+
+    # convert to integer
+    cur_pressure=${cur_pressure/\.*}
+    pressure=${pressure/\.*}
+
+    # see if pressure is rising or falling...
+    if [ $cur_pressure -gt $pressure ]; then
+        pressure_trend="rising"
+        pressure_trend_gsm="rising_at.gsm"
+    fi
+    if [ $cur_pressure -lt $pressure ]; then
+        pressure_trend="falling"
+        pressure_trend_gsm="falling_at.gsm"
+    fi
+    if [ $cur_pressure -eq  $pressure ]; then
+        pressure_trend="steady"
+        pressure_trend_gsm="steady_at.gsm"
+    fi
+fi
+
+
+# Build the wx report...
+# Intro info and time recorded
+echo "Weather report for $neighborhood ,  $city . " > $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+cat $SOUND_DIR/currentwxrpt.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+
+
+## # Drop time zone information (using awk)
+## echo "$observation_time" | awk '{ print $1 " " $2 " " $3 " " $4 " " $5 " " $6 " " $7}' >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+
+## # Current Conditions (tnx to w0OTM)
+## if [ ! -z "$weather" ] ; then
+##     echo "The current sky conditions are $weather." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+## fi
+
+# Wind Info
+if [ "$wind_string" = "Calm" ] ; then
+    echo "the wind was calm." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+    cat $SOUND_DIR/wind_was_calm.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+    ##echo "wind_string=$wind_string, wind_mph=$wind_mph, wind_gust_mph=$wind_gust_mph"
+else
+    case $wind_dir in
+
+        NNE) wind_dir="north north east"
+             wind_dir_gsm=NNE.gsm
+             ;;
+        NE)  wind_dir="north east"
+             wind_dir_gsm=NE.gsm
+             ;;
+
+        ENE) wind_dir="east north east"
+             wind_dir_gsm=ENE.gsm
+             ;;
+
+        ESE) wind_dir="east south east"
+             wind_dir_gsm=ESE.gsm
+             ;;
+        SE) wind_dir="south east"
+             wind_dir_gsm=SE.gsm
+             ;;
+        SSE) wind_dir="south south east"
+             wind_dir_gsm=SSE.gsm
+             ;;
+
+        SSW) wind_dir="south south west"
+             wind_dir_gsm=SSW.gsm
+             ;;
+        SW)  wind_dir="south west"
+             wind_dir_gsm=SW.gsm
+             ;;
+        WSW) wind_dir="west south west"
+             wind_dir_gsm=WSW.gsm
+             ;;
+
+        WNW) wind_dir="west north west"
+             wind_dir_gsm=WNW.gsm
+             ;;
+        NW)  wind_dir="north west"
+             wind_dir_gsm=NW.gsm
+             ;;
+        NNW) wind_dir="north north west"
+             wind_dir_gsm=NNW.gsm
+             ;;
+    esac
+
+    #convert from MPH to KPH since underground only uses mph in xml
+
+    wind_kph=$(echo "$wind_mph * 1.6" | bc)
+    wind_gust_kph=$(echo "$wind_gust_mph * 1.6" | bc)
+
+    # Wind speed
+    if [ "$UNITS" = "METRIC" ] ; then
+        # Wind speed in KPH
+        echo "the wind was blowing at a speed of ${wind_kph} kilometers per hour" >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+        echo "from ${wind_dir}" >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+        # drop the decimal in wind_gusts_kph when testing
+        if [ ${wind_gust_kph%%.*} -ge 0 ] ; then
+            echo "with wind gusts up to ${wind_gust_kph} kilomenters per hour.  " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+        fi
+    else
+        # Wind speed in MPH
+        echo "the wind was blowing at a speed of ${wind_mph} miles per hour from ${wind_dir}" >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+#gsm conv
+echo 1
+        number_conversion $wind_mph
+        cat $SOUND_DIR/windwasblowing.gsm /tmp/numbers.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+        cat $SOUND_DIR/mph_from.gsm $SOUND_DIR/${wind_dir_gsm} >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+        # drop the decimal in wind_gusts_mph when testing
+        if [ ${wind_gust_mph%%.*} -ge 0 ] ; then
+            echo "with wind gusts up to ${wind_gust_mph} miles per hour.  " >> $UG_WX_SOUND_DIR_DIR/cur_WxRpt_ug.txt
+#gsm conv
+echo 2
+            number_conversion $wind_gust_mph
+            cat $SOUND_DIR/with_wind_gusts_up.gsm /tmp/numbers.gsm  >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+            cat $SOUND_DIR/mph.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+        fi
+    fi
+fi
+
+# Temp and Dewpoint Info
+if [ "$UNITS" = "METRIC" ] ; then
+    # Temp and Dewpoint Info in Celsius
+    echo "The temperature was ${temp_c} degrees Celsius with a dewpoint of ${dewpoint_c} degrees." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+
+   # Windchill
+   if [ ${windchill_c} ] ; then
+       echo "The wind chill was at  ${windchill_c} degrees Celsius." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+   fi
+else
+    # Temp and Dewpoint Info Farenheit
+    echo "The temperature was ${temp_f} degrees with a dewpoint of ${dewpoint_f} degrees." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+#gsm conv
+echo 3
+    number_conversion ${temp_f}
+    cat $SOUND_DIR/temperature_was.gsm /tmp/numbers.gsm $SOUND_DIR/degrees.gsm  >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+echo 3a
+    number_conversion ${dewpoint_f}
+    cat $SOUND_DIR/with_dew_point_of.gsm /tmp/numbers.gsm $SOUND_DIR/degrees.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+
+    # Windchill
+    if [ "${windchill_f}" ] ; then
+        echo "The wind chill was at  ${windchill_f} degrees." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+#gsm conv
+echo 4
+        number_conversion ${windchill_f}
+        cat $SOUND_DIR/windchillat.gsm /tmp/numbers.gsm  $SOUND_DIR/degrees.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+    fi
+fi
+
+# Presure Info
+case "$PRES_UNITS" in
+
+    HPA)  #convert millibar to HPA
+        echo "The pressure was ${pressure_trend} at ${cur_pressure_mb} hectopascal. " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+         ;;
+
+    MB) # Pressure in millibars
+        pressure_mb_Hg=$(echo "$cur_pressure_mb * .75" | bc)
+        echo "The pressure was ${pressure_trend} at ${pressure_mb_Hg} millibars of mercury. " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+         ;;
+
+    IN) # Pressure in inches
+        echo "The pressure was ${pressure_trend} at ${cur_pressure_in} inches of mercury. " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+#gsm conv
+echo 5
+
+        number_conversion $cur_pressure_in
+        cat $SOUND_DIR/pressure_was.gsm $SOUND_DIR/${pressure_trend_gsm} /tmp/numbers.gsm $SOUND_DIR/in_of_mercury.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+
+        ;;
+
+esac
+
+# Humidity info
+# remove tailing % if present, some stations report this.
+echo "The relative humidity was ${relative_humidity%\%} percent." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+number_conversion ${relative_humidity%\%}
+cat $SOUND_DIR/relative_humidity.gsm /tmp/numbers.gsm $SOUND_DIR/percent.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+
+# Precipatation Data
+case "$RAIN_UNITS" in
+
+    CM) # Precipitation Data in cm
+        if [ "${precip_today_metric%%.*}" -ge 0 ] ; then
+            if  [ "$precip_today_metric" == "0.0 cm"  -o  "$precip_today_metric" == " " -o "$precip_today_metric" == "" ] ; then
+                # echo "No precipitation was recorded, " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+                PREC=NR
+            else
+                echo "Total precipitation today was ${precip_today_metric% cm} centimeters , " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+                echo "precipitation in the last hour was ${precip_1hr_metric} centimeters." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+            fi
+        fi
+        ;;
+
+    MM) # Precipitation data in mm
+        if [ "${precip_today_metric%%.*}" -ge 0 ] ; then
+            if  [ "$precip_today_metric" == "0.0 cm"  -o  "$precip_today_metric" == " " -o "$precip_today_metric" == "" ] ; then
+                # echo "No precipitation was recorded, " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+                PREC=NR
+            else
+                # convert to MM
+                precip_today_mm=$(echo "${precip_today_metric% cm} * 10" | bc)
+                precip_1hr_mm=$(echo "$precip_1hr_metric * 10" | bc)
+                echo "Total precipitation today was ${precip_today_mm} millimeters " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+                echo "precipitation in the last hour was ${precip_1hr_mm} millimeters." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+            fi
+        fi
+        ;;
+
+    IN) # Precipatation Data in inches
+        if [ "${precip_today_in%%.*}" -ge 0 ] ; then
+            if [ "$precip_today_in" == "0.00" ] || [ "$precip_today_in" == " " ] || [ "$precip_today_in" == "" ] ; then
+                # echo "No precipitation was recorded, " >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+                PREC=NR
+            else
+                echo "Total precipitation today was ${precip_today_in} inches" >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+                echo "precipitation in the last hour was ${precip_1hr_in} inches." >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+# gsm
+                number_conversion ${precip_today_in}
+                cat $SOUND_DIR/total_prec_today.gsm /tmp/numbers.gsm $SOUND_DIR/inches.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+                number_conversion ${precip_1hr_in}
+                cat $SOUND_DIR/prec_last_hr.gsm /tmp/numbers.gsm  $SOUND_DIR/inches.gsm >> $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm
+            fi
+        fi
+        ;;
+esac
+
+# store current pressure
+
+echo "# Last Updated: $DATE" > $UG_WX_WRKING_DIR/saved_pressure.var
+echo "pressure_mb=$cur_pressure_mb" >> $UG_WX_WRKING_DIR/saved_pressure.var
+echo "pressure_in=$cur_pressure_in" >> $UG_WX_WRKING_DIR/saved_pressure.var
+
+##############################
+# create the audio file
+
+# convert text to audio
+# converted file will be the same file prefix but ext will be .ul
+#      CONV_FILE=$UG_WX_SOUND_DIR/cur_WxRpt_ug.ul
+
+# $TTS_PROGRAM $UG_WX_SOUND_DIR/cur_WxRpt_ug.txt
+
+# convert gsm to ul
+sox -V2 $UG_WX_SOUND_DIR/cur_WxRpt_ug.gsm -r 8000 -c 1 -t ul $UG_WX_SOUND_DIR/cur_WxRpt_ug.ul
+
+
+exit 0

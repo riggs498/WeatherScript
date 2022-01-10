@@ -1,0 +1,476 @@
+# ew wx alert
+
+#
+DEBUG="2"                               # debug levels 0 = no debug
+                                        #  1 = save alerts
+                                        #  2 = detailed info
+                                        #  3 = special debug only
+
+
+# sound files
+SOUND_DIR=/usr/local/share/sound/wx
+
+
+# Script config location
+WEATHER="/usr/local/etc/wx"
+
+# Load config file
+if [ -f ${WEATHER}/wx_scripts.conf ] ; then
+    source ${WEATHER}/wx_scripts.conf
+else
+    echo "Missing ${WEATHER}/wx_scripts.conf file, aborting..."
+    exit 1
+fi
+
+# override from config file
+WXALERT_SPOOLDIR=/tmp/wx_test/alert
+
+# Check Arguments...
+# has only one argument, county info
+if [ "$#" = "1" ] ; then
+   COUNTY=$1
+fi
+
+# if no arguments, then error.
+if [ "$1" = "" ] ; then
+    echo "Missing Argument, need wx underground station id.."
+    echo
+    exit 1
+fi
+
+if [ "$COUNTY" = "help" ] ; then                        # If no arguments
+    echo "Usage getWxAlert <county>"
+    echo "    where <county>=State County, for example: WIC002"
+    echo "    See http://alerts.weather.gov/ for more informaton"
+    echo
+    echo "    Or you can edit the wx_scripts.conf file to include the COUNTY variable."
+    echo
+    exit 1
+fi
+
+if [ ! -d /tmp/wx_test/alert/$COUNTY ] ; then
+    mkdir -p /tmp/wx_test/alert/$COUNTY
+fi
+
+
+####### Functions ######
+# Send message to LOGFILE
+function debug2 () {
+  MESSAGE="${0##*/} DEBUG: $@"
+  echo "$MESSAGE"
+  if [ -n "$LOGFILE" ]; then
+    echo "$(date '+%b %d %Y %T %z') $MESSAGE" >> $LOGFILE
+  fi
+}
+
+# Send message to LOGFILE without echo to standard
+function debug3 () {
+  MESSAGE="${0##*/} DEBUG: $@"
+  if [ -n "$LOGFILE" ]; then
+    echo "$(date '+%b %d %Y %T %z') $MESSAGE" >> $LOGFILE
+  fi
+}
+
+# download alert for parsing
+PLIST="$WEATHER/wx_alert_product.txt"     # Product list file and directory
+# standard
+URL="http://alerts.weather.gov/cap/wwaatmget.php?x=" # URL to RSS data
+
+# TEST ONLY
+# URL="http://raspweb.w0anm.com/wx_test/MNC171_alert.info" # URL to RSS data
+DATE=`date +%Y.%m.%d.\%H\%M`
+NO_WXALERT_MSG=$LOCAL/no_wxalert_msg
+
+# MAIL=/bin/mail                             # mail binary
+# MAIL="/usr/local/bin/sendmail_g.pl"          # gmail SendMail script
+# MAIL="/usr/local/bin/sendmail-gm.py"          # gmail SendMail script
+# CRIT_tTYPES=`cat $WEATHER/wx_critical_alerts.txt`
+NORM_TYPES=`cat $WEATHER/wx_normal_alerts.txt`
+## NORM_TYPES=`cat $WEATHER/alert_test.txt`
+
+
+#----------------------------- Main program ----------------------
+
+if [ ! -d $WXALERT_SPOOLDIR/$COUNTY ] ; then
+    mkdir -p $WXALERT_SPOOLDIR/$COUNTY
+fi
+
+if [ ! -d /tmp/wx_test/alert/$COUNTY ] ; then
+    mkdir -p /tmp/wx_test/alert/$COUNTY
+fi
+
+cd $WXALERT_SPOOLDIR/$COUNTY
+
+ALERT_DL=""
+CHKCNT=0
+# loop until get proper response, if after 5 attempts notify
+while [ -z "$ALERT_DL" ] ; do
+
+     if [ $CHKCNT -gt 5 ] ; then
+         log "ERROR: $URL is not responding for getWxAlert - ${COUNTY}"
+         log "        Possible issue with nws.gov server or internet connection"
+         ls -l /tmp/wx_test/alert/$COUNTY/alert.info
+         exit 1
+     fi
+
+     # Alternative method of getting url information:
+     ##/usr/bin/lynx -dump $URL$COUNTY > /tmp/wx_test/alert/$COUNTY/alert.info
+
+     # remove old alert.info file
+     if [ -f /tmp/wx_test/alert/$COUNTY/alert.info ] ; then
+         rm /tmp/wx_test/alert/$COUNTY/alert.info
+     fi
+
+     # $WGET -t 10 -w 10 --cache=off --random-wait -q $URL$COUNTY -O - > /tmp/wx_test/alert/$COUNTY/alert.info
+     $WGET --no-cache --no-dns-cache --tries=10 --random-wait -q $URL$COUNTY -O - > /tmp/wx_test/alert/$COUNTY/alert.info
+                                   # -t 10 retries, -w 10 sec between
+                                   # turn cache off at server
+
+     # place  data in variable to see if contains data
+     ALERT_DL="`head -1  /tmp/wx_test/alert/$COUNTY/alert.info`"
+     let CHKCNT=$CHKCNT+1
+     # delay before retrying
+     sleep 10
+done
+
+# Added for validation of data, test only
+# cp /tmp/wx_test/alert/$COUNTY/alert.info /tmp/debug/alert.info_$DATE
+
+#test to see if title duplicates
+grep "title>" /tmp/wx_test/alert/$COUNTY/alert.info | sed '/<title>/,/<\/title/!d' | sed 's/<title>//' | sed 's/<\/title>//' | egrep -v "Current Watches"  > /tmp/wx_test/alert/$COUNTY/alert_watches
+
+# Attempt to address the issue with duplicate entries using wget and NWS URL.
+
+NLINES=`wc -l /tmp/wx_test/alert/$COUNTY/alert_watches`
+
+if [ ! "$NLINES" = 1 ] ; then
+    #get first line
+    FIRSTLINE=`head -1 /tmp/wx_test/alert/$COUNTY/alert_watches`
+
+    # check for dups
+    NDUPS=`grep "$FIRSTLINE" /tmp/wx_test/alert/$COUNTY/alert_watches | wc -l`
+    NUNIQ=`uniq /tmp/wx_test/alert/$COUNTY/alert_watches | wc -l`
+
+    if [ ! "$NDUPS" = "1" ] ; then
+       if [ "$DEBUG" = "3" ] ; then
+           debug3 "NWS alert data is BAD"
+           debug3 "    First Line: $FIRSTLINE"
+           debug3 "    NDUPS: $NDUPS"
+           debug3 "    NUNIQ: $NUNIQ"
+           debug3 "   NLINES: $NLINES"
+          debug3 "Exiting.."
+           debug3
+        fi
+        debug3 "NWS alert data is BAD"
+        rm -f /tmp/wx_test/alert/$COUNTY/alert_watches
+        exit 1
+   fi
+fi
+
+if [ "$DEBUG" = "3" ] ; then
+    debug3 "NWS alert data is OK"
+    debug3 "   First Line: $FIRSTLINE"
+    debug3 "   NDUPS: $NDUPS"
+    debug3 "   NUNIQ: $NUNIQ"
+    debug3
+fi
+
+debug3 "NWS alert data is OK"
+rm -f /tmp/wx_test/alert/$COUNTY/alert_watches
+
+## done with test code
+
+# process the downloaded information
+cat /tmp/wx_test/alert/$COUNTY/alert.info | \
+  grep "title>" | \
+  sed '/<title>/,/<\/title/!d' |  \
+  sed  's/<title>//' | sed 's/<\/title>//' | \
+  egrep -v "Current Watches" > wx_new.txt
+
+# get full summary URL Link
+FULL_SUMMARY_URL=`cat /tmp/wx_test/alert/$COUNTY/alert.info | egrep "<id>|</id>" | sed  's/<id>//' | sed 's/<\/id>//' | grep capget | tr -d '\r'`
+
+# Extract Alert from url information:
+ALERT=`cat /tmp/wx_test/alert/$COUNTY/alert.info | egrep "<title>|</title>" | sed  's/<title>//' | sed 's/<\/title>//'| sed 's/\(by NWS*\).*/\1/' | sed 's/by NWS//'`
+
+# Extract Summary from url information:
+SUMMARY=`cat /tmp/wx_test/alert/$COUNTY/alert.info | egrep "<summary>|</summary>" | sed  's/<summary>//' | sed 's/<\/summary>//'`
+
+# Debug stuff, print values for $ALERT and SUMMARY
+if [ "$DEBUG" = "2" ] ; then
+    echo
+    debug2 "************START**************************"
+    debug2 "NWS_URL=$URL"
+    debug2 "FULL_SUMMARY_URL=$FULL_SUMMARY_URL"
+    debug2 "CHKCNT=$CHKCNT"
+    debug2 "ALERT=$ALERT"
+    debug2 "SUMMARY=$SUMMARY"
+    debug2 "COUNTY=$COUNTY"
+    debug2 "COUNTY_NAME=$COUNTY_NAME"
+    debug2 "VALID_ALERT=$VALID_ALERT"
+fi
+
+# Full_alert
+echo "$ALERT ... $SUMMARY" > alert_summary.txt
+#if the download failed, alert_summary.txt has only " ... ",  then log and exit.
+if [ "$DEBUG" = "2" ] ; then
+    DWNCHK=`cat alert_summary.txt`
+    echo
+    debug2 "dwnload chk:$DWNCHK"
+fi
+if [ "`cat alert_summary.txt`" == " ... " ] ; then
+    log "ERROR: Failed to download alert correct data from ${COUNTY}"
+    log "        Verify $COUNTY is valid or URL has not changed."
+    exit 1
+fi
+
+#====================================
+
+# 
+
+# check if no active watches, if so clean up any alerts and create
+# no watches message for summary.
+if ( grep "no active watches" wx_new.txt &> /dev/null ) ; then
+
+    # skip all of this if no_alert file is present indicating audio generated
+    if [ ! -f no_alerts.txt ] ; then
+        rm -f *.ul                        # Remove all alerts, audio files
+        rm -f alert.txt
+
+        # alert_summary.txt and alert_pre_summary.txt  must match, or will
+        # generate an alert
+##
+        cp alert_summary.txt alert_prev_summary.txt
+        cp wx_new.txt  no_alerts.txt      # After clean up, create
+                                          # "no active warnings file
+
+        # no alert
+        # cp $SOUND_DIR/no_alerts.gsm alert_short.gsm
+
+    fi   # < if [ -f no_alerts.txt ]
+    exit 0   # Done, now exit.
+fi
+log "Checking for Wx Alert updates for $COUNTY"
+# Skip if files are the same, alerts are active, but nothing has changed.
+####if ! diff -q alert_summary.txt alert_prev_summary.txt &> /dev/null; then
+
+    # New Alerts are found.
+    log "New Wx Alerts for $COUNTY"
+    cp alert_summary.txt alert_prev_summary.txt # make the files the same now
+    rm -f alert.txt *.raw no_alerts.txt        # and remove old alerts
+    # remove email alert file
+    if [ -f /tmp/wx_test/alert/${COUNTY}/email_alert.txt ] ; then
+        rm -f /tmp/wx_test/alert/${COUNTY}/email_alert.txt
+    fi
+    # remove the old plist.txt file.
+    if [ -f plist.txt ] ; then
+        cp plist.txt /tmp/.
+        rm plist.txt
+    fi
+
+    # create the alert file
+    echo "$ALERT" > alert.txt
+
+    # Create the product list which is tested against
+    #   if product not found, will leave a null file. This is tested against
+    #   at end of script, see ref#1
+    while read PRODUCT; do                     # Check for alert products
+        # appending the 1st matching, ignore case
+        grep -i -m 1 "^$PRODUCT" wx_new.txt
+    done < $PLIST >> plist.txt        # line to alert.txt file
+
+echo "cat -->"
+    cat plist.txt
+
+echo "$PLIST"
+
+
+
+####fi
+ #################################################################
+    #   Pre Conversions file creation.
+    #################################################################
+    # create pre_alert.txt file (input to  post conversion)
+    #
+
+    # check the alert types, critical/normal
+    if [ "$DEBUG" = "2" ] ; then
+        debug2 "********* WXALERT_BEACON=[$WXALERT_BEACON] **********"
+    fi
+    # Setup TYPES of alerts to trigger on depending upon WXALERT_BEACON Variable
+    if [ "$WXALERT_BEACON" = "C" ] ; then
+        TYPES=$CRIT_TYPES
+    else
+        TYPES=$NORM_TYPES
+    fi
+
+    # Set flag
+    CRIT_BEACON_FLAG="N"
+    SAVEIFS=$IFS
+    IFS=$(echo -en "\n\b")
+    if [ "$DEBUG" = "2" ] ; then
+        debug2 "TYPES= $TYPES"
+    fi
+
+    # check for matching TYPES in alert
+    for TYPE in $TYPES
+        do
+        ## added space to avoid the first line being seen as an alert
+        ## this may need to be changed as follows:
+        #  egrep -v "Current Watches" alert.txt > alert1.txt
+        #  mv alert1.txt alert
+        ## if grep -i  "$TYPE" alert.txt >> /tmp/wx_test/alert/$COUNTY/a_tmp.txt; then      # Extract matching alerts
+       if grep -i  "$TYPE " alert.txt >> /tmp/wx_test/alert/$COUNTY/a_tmp.txt; then      # Extract matching alerts
+            #set up header of the alert file
+            echo "Weather Alert. for $COUNTY_NAME" > /tmp/wx_test/alert/$COUNTY/a_tmp.txt
+            echo ".." >> /tmp/wx_test/alert/$COUNTY/a_tmp.txt
+            log "Get Wx Alert INFO for $COUNTY: $TYPE"
+            # set critical beacon flag, if a match
+            CRIT_BEACON_FLAG="Y"
+            VALID_ALERT=yes
+        else
+            VALID_ALERT=no
+        fi
+    done
+    IFS=$SAVEIFS
+
+#    # rename to pre_alert.txt
+    mv /tmp/wx_test/alert/$COUNTY/a_tmp.txt /tmp/wx_test/alert/$COUNTY/pre_alert.txt
+#
+#    #############################
+#    # create pre_conv_alert_summmary.txt (input to  post conversion)
+#    # insert weather header/trailer to full alert txt
+#    echo ". . Weather Alert Summary for County $COUNTY_NAME." > /tmp/wx_test/alert/$COUNTY/a_tmp.txt
+#    cat alert_summary.txt >> /tmp/wx_test/alert/$COUNTY/a_tmp.txt
+#
+#    # copy tmp.txt over for post conversion
+#    cp /tmp/wx_test/alert/$COUNTY/a_tmp.txt /tmp/wx_test/alert/$COUNTY/pre_conv_alert_summary.txt
+#
+    # reset file
+    echo "" > /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+    # if multiple URL's go through them
+    for URL in $FULL_SUMMARY_URL ; do
+
+      # reset while variables
+      ALERT_DL=""
+      CHKCNT=0
+
+        # loop until get proper response, if after 5 attempts notify
+        while [ -z "$ALERT_DL" ] ; do
+
+          if [ $CHKCNT -gt 5 ] ; then
+             log "ERROR: $URL is not responding for getWxAlert - ${COUNTY}"
+             log "        Possible issue with nws.gov server or internet connection"
+             ls -l /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+             exit 1
+          fi
+
+          ##############################
+          # Create the raw full Summary File
+          if [ "$DEBUG" = "2" ] ; then
+              debug2 "FULL_SUMMARY_URL Entry: $URL"
+          fi
+
+          # Create full summary from URL file
+          $WGET -t 10 -w 10 --cache=off --random-wait -q $URL -O - | sed '/<description>/,/<\/description/!d' | \
+                 sed 's/<description>//' |  \
+                 sed 's/<\/description>//' >> /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+                                   # -t 10 retries, -w 10 sec between
+                                   # turn cache off at server
+          # check if anything downloaded
+          ALERT_DL="`tail -1  /tmp/wx_test/alert/$COUNTY/full_alert_info.txt`"
+echo "ALERT_DL=$ALERT_DL"
+          let CHKCNT=$CHKCNT+1
+
+          echo " " >> /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+          # copy the full alert prior to appending
+          # url information.
+#          cp /tmp/wx_test/alert/$COUNTY/full_alert_info.txt /tmp/wx_test/alert/$COUNTY/pre_full_alert_info.txt
+#
+#          echo "For more information:" >> /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+#          echo  $URL >> /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+#          echo "==================================================================" >> /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+#          echo " " >> /tmp/wx_test/alert/$COUNTY/full_alert_info.txt
+#
+          # delay before retrying
+          sleep 4
+        done  # while loop
+    done  # loop url's
+
+    # additional debug info
+    if [ "$DEBUG" = "2" ] ; then
+        debug2 "**************************************************************"
+        debug2 "**alert's don't match**"
+        debug2 "=============================================================="
+        debug2 "alert_summary file:"
+        debug2 "   /tmp/wx_test/alert/${COUNTY}/alert_summary.txt"
+        debug2 "=============================================================="
+        debug2 "alert_prev_summary.txt file:"
+        debug2 "    /tmp/wx_test/alert/${COUNTY}/alert_prev_summary.txt"
+        debug2 "=============================================================="
+        debug2 "pre_full_alert_info.txt file:"
+        debug2 "    /tmp/wx_test/alert/${COUNTY}/pre_full_alert_info.txt"
+        debug2 "**************************************************************"
+        debug2
+    fi
+
+
+    # Create GSM files for the alert. This will be based upon the plist.txt file.
+    # can plist file with Product, if match, then create new gsm list.
+    # Need initial wx_alert message.
+    # then the remaining alerts.
+set -x
+
+    while read PRODUCT; do                     # Check for alert products
+        # appending the 1st matching, ignore case
+        # grep -i -m 1 "^$PRODUCT" /usr/local/etc/wx/wx_normal_alerts.txt
+        grep -i -m 1 "$PRODUCT" /usr/local/etc/wx/alert_test.txt |  awk 'BEGIN { FS = "," } ; { print $1 }'
+    done < $PLIST >> gsm_list.txt        # line to alert.txt file
+
+# grep -i "blizzard warning" alert_test.txt | awk 'BEGIN { FS = "," } ; { print $1 }'
+set +x
+
+
+    # check if file exists and size gt zero, if not email/play weather (ref#1)
+    if [ -s plist.txt ]; then
+       # Email Alerts if $EMAIL defined.
+       if [ ! -z "$EMAIL" ] ; then
+           send_email
+       fi
+       # if WXALERT_BEACON is set to Yes, then place playWxAlertBg into
+       # background
+       #
+       # Beacon needs to be Y -or- (beacon C -and- Crit_Beacon flag yes)
+       if [ "$DEBUG" = "2" ] ; then
+           echo "WXALERT_BEACON = $WXALERT_BEACON, CRIT_BEACON_FLAG=$CRIT_BEACON_FLAG"
+       fi
+       if [ $WXALERT_BEACON = "Y" ] || ([ $WXALERT_BEACON = "C" ] && [ $CRIT_BEACON_FLAG = "Y" ]) ; then
+           # first kill any left over process
+           # get PID and kill it
+           if [ -f $WXALERT_SPOOLDIR/$COUNTY/playWxAlertBg.pid ] ; then
+               kill `cat < playWxAlertBg.pid`
+           fi
+           # if $LOCAL/no_wxalert_msg file is present, remove it to start
+           # new weather alert msg
+           if [ -f $NO_WXALERT_MSG ] ; then
+               rm $NO_WXALERT_MSG
+           fi
+
+      if [ "$VALID_ALERT" = "yes" ] ; then #cjk
+           # call playWxAlert and place in background
+           if [ "$DEBUG" = "2" ] ; then
+              debug2 "********* Launching Debug Version of playWxAlert **********"
+              bash -x /usr/local/bin/playWxAlertBg $COUNTY 2>&1 | tee /tmp/WX_DEBUG &
+           else
+              log "Launching playWxAlertBg..."
+              /usr/local/bin/playWxAlertBg $COUNTY &
+           fi # debug
+       fi # wxalert beacon
+      fi # valid cjke
+    fi # -s plist.txt
+## cjk
+# fi ; # comment out due to the first if command commented.
+
+exit 0
+
+ 

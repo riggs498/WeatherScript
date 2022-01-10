@@ -1,0 +1,43 @@
+blizzard_warn.gsm,BLIZZARD WARNING
+blizzard_watch.gsm,BLIZZARD WATCH
+blowing_snow_adv.gsm,BLOWING SNOW ADVISORY
+civil_danger_warn.gsm,CIVIL DANGER WARNING
+civil_emergency_msg.gsm,CIVIL EMERGENCY MESSAGE
+dense_fog_adv.gsm,DENSE FOG ADVISORY
+evac_immediate.gsm,EVACUATION IMMEDIATE   
+excess_heat_warn.gsm,EXCESSIVE HEAT WARNING
+excexx_heat_watch.gsm,EXCESSIVE HEAT WATCH
+flash_flood_warn.gsm,FLASH FLOOD WARNING
+flood_watch.gsm,FLOOD WATCH
+freeze_warn.gsm,FREEZE WARNING
+freeze_driz_adv.gsm,FREEZING DRIZZLE ADVISORY
+freeze_fog_adv.gsm,FREEZING FOG ADVISORY
+freeze_rain_adv.gsm,FREEZING RAIN ADVISORY
+frost_adv.gsm,FROST ADVISORY
+heat_adv.gsm,HEAT ADVISORY
+heavy_freez_spray_warn.gsm,HEAVY FREEZING SPRAY WARNING
+heavy_sleet_warn.gsm,HEAVY SLEET WARNING
+heavy_snow_warn.gsm,HEAVY SNOW WARNING 
+high_surf_adv.gsm,HIGH SURF ADVISORY
+high_wind_warn.gsm,HIGH WIND WARNING
+high_wind_watch.gsm,HIGH WIND WATCH
+ice_storm_warn.gsm,ICE STORM WARNING
+lake_effect_snow_adv.gsm,LAKE EFFECT SNOW ADVISORY
+lake_effect_snow_warn.gsm,LAKE EFFECT SNOW WARNING
+nuclear_power_plant_warn.gsm,NUCLEAR POWER PLANT WARNING
+radiolog_hazard_warn.gsm,RADIOLOGICAL HAZARD WARNING
+sev_thund_warn.gsm,SEVERE THUNDERSTORM WARNING
+sev_thund_watch.gsm,SEVERE THUNDERSTORM WATCH
+sleet_adv.gsm,SLEET ADVISORY
+snow_adv.gsm,SNOW ADVISORY
+snow_blow_adv.gsm,SNOW AND BLOWING SNOW ADVISORY
+storm_warn.gsm,STORM WARNING
+tornado_warn.gsm,TORNADO WARNING
+tornado_watch.gsm,TORNADO WATCH
+volcano_warn.gsm,VOLCANO WARNING
+wind_adv.gsm,WIND ADVISORY
+wind_chill_warn.gsm,WIND CHILL WARNING
+wind_chill_watch.gsm,WIND CHILL WATCH
+winter_storm_warn.gsm,WINTER STORM WARNING
+winter_store_watch.gsm,WINTER STORM WATCH
+winter_weather_adv.gsm,WINTER WEATHER ADVISORY

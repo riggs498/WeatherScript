@@ -1,0 +1,153 @@
+#!/bin/bash
+#
+# playWxAlertBg - allstar wxscripts
+#
+#  by w0anm
+#
+# Play weather alerts Announcements. This will automatically stop when
+# alert is cancelled. 
+# Normally, placed in background from getWxAlert.
+#
+#######################
+# $Id: playWxAlertBg 19 2015-02-19 22:03:53Z w0anm $
+
+# My process id
+MYPROC=$$
+
+WEATHER="/usr/local/etc/wx"
+
+# Load config file
+if [ -f ${WEATHER}/wx_scripts.conf ] ; then
+    source ${WEATHER}/wx_scripts.conf
+else
+    echo "Missing ${WEATHER}/wx_scripts.conf file, aborting..."
+    exit 1
+fi
+
+# multiple zone support.
+# if COUNTY  not an argument, then error.
+if [ "$1" = "" ] ; then
+    echo "Missing Argument, need wx underground station id.."
+    echo
+    exit 1
+else
+    COUNTY=$1
+fi
+
+# if argument is not a directory, abort and do nothing. send error
+if [ ! -d /tmp/wx/alert/$COUNTY ] ; then
+    # msg to log file.
+    log "COUNTY directory $COUNTY is not present, aborting..." 
+    exit 1
+fi
+
+WXALERT_TEXT=${WXALERT_SPOOLDIR}/$COUNTY/alert.txt
+NO_WXALERT_MSG=$LOCAL/no_wxalert_msg
+
+# store the PID
+echo "$$" > $WXALERT_SPOOLDIR/$COUNTY/playWxAlertBg.pid
+
+##########
+PlayMsg () {
+
+   #log "Playing Wx Alert (${SLEEPTIME}s) for $COUNTY"
+   log "Mode - $PLAYBACK_MODE - $Msg"
+
+   /usr/sbin/asterisk -rx "rpt $PLAYBACK_MODE $NODE1 /tmp/wx/alert/$COUNTY/alert_short" &> /dev/null 2>&1
+
+} # end PlayMsg 
+
+
+#######################################################################
+#  Main Program
+
+# Run's in background, called by getWxAlert
+
+while [  -f $WXALERT_TEXT ] ; do
+   # check if lock file is present. If so, wait for file to be 
+   # removed, this prevents alert announcements from simultaneioulsy
+   # being sent.
+   # if NO_WXALERT file is present, skip playing msg
+   if [ ! -f $NO_WXALERT_MSG ] ; then
+       while [ -f /tmp/playWxAlertBg-lock ] ; do
+           sleep 30
+       done
+
+       # set lock file
+       echo $MYPROC > /tmp/playWxAlertBg-lock
+            
+       Msg="Playing Wx Alert (initial) for $COUNTY"
+       PlayMsg
+
+       # clear lock file
+       rm /tmp/playWxAlertBg-lock
+   else
+       log "Skipping Wx Alert (initial) for $COUNTY, $NO_WXALERT_MSG present"
+   fi
+
+   # play time is initial, 5m, 10m, 30m, 30m, 30m, then every 60m
+   for SLEEPTIME in $SLEEPTIME_SEQ ; do
+      sleep $SLEEPTIME
+      if  [ ! -f $WXALERT_TEXT ] || [ $SLEEPTIME = "0" ] ; then
+         break
+      fi
+
+      # check to see if you should output an alert msg
+      if [ ! -f $NO_WXALERT_MSG ] ; then
+          # check if lock file is present. If so, wait for file to be 
+          # removed, this prevents alert announcements from simultaneioulsy
+          # being sent.
+          while [ -f /tmp/playWxAlertBg-lock ] ; do
+              sleep 30
+          done
+          # set lock file
+          echo $MYPROC > /tmp/playWxAlertBg-lock
+            
+          Msg="Playing Wx Alert (${SLEEPTIME}s) for $COUNTY"
+          PlayMsg
+
+          # clear lock file
+          rm /tmp/playWxAlertBg-lock
+      else
+          log "Skipping Wx Alert (${SLEEPTIME}s) for $COUNTY, $NO_WXALERT_MSG present"
+      fi
+   done
+
+   while [ -f $WXALERT_TEXT ] ; do
+      EXTENDEDTIME=3600
+      sleep $EXTENDEDTIME 
+      if  [ ! -f  $WXALERT_TEXT ] ; then
+         break
+      fi
+
+      # check to see if you should output an alert msg
+      if [ ! -f $NO_WXALERT_MSG ] ; then
+          # check if lock file is present. 
+          while [ -f /tmp/playWxAlertBg-lock ] ; do
+              sleep 30
+          done
+          # set lock file
+          echo $MYPROC > /tmp/playWxAlertBg-lock
+            
+          # if SLEEPTIME is 0, then don't play alert, we are done.
+          if [ "$SLEEPTIME" -ne "0" ] ; then
+              Msg="Playing Wx Alert (${EXTENDEDTIME}s) for $COUNTY"
+              PlayMsg
+          fi
+
+          # clear lock file
+          rm /tmp/playWxAlertBg-lock
+      else
+          log "Skipping Wx Alert (${EXTENDEDTIME}) for $COUNTY, $NO_WXALERT_MSG present"
+      fi
+   done   
+done
+
+# remove PID file
+rm $WXALERT_SPOOLDIR/$COUNTY/playWxAlertBg.pid
+
+log "Alert over for $COUNTY"
+
+exit 0
+
+

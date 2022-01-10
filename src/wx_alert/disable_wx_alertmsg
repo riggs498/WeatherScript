@@ -1,0 +1,46 @@
+#!/bin/bash 
+# 
+# Disable weather alert messages
+# by adding $LOCAL/no_wxalert_msg file
+# $Id: disable_wx_alertmsg 20 2015-03-08 23:29:23Z w0anm $
+
+# This script can be call manually, by a cron entry, or by a dtmf sequence
+# via rpt.conf
+#
+#Example of a cron entry:
+#    # enable Wx Alerts
+#    0 7 * * * (/usr/local/bin/enable_wx_alertmsg &> /dev/null 2>&1))
+#    # disable Wx Alerts
+#    0 23 * * * (/usr/local/bin/disable_wx_alertmsg &> /dev/null 2>&1))
+
+#Example of rpt.conf entry:
+#   ; enable/disable alert messages
+#   880=cmd,/usr/local/bin/disable_wx_alertmsg     ; disable wx alert msgs
+#   881=cmd,/usr/local/bin/enable_wx_alertmsg      ; enable wx msgs
+
+# Load config file
+
+if [ -f /usr/local/etc/wx/wx_scripts.conf ] ; then
+    source /usr/local/etc/wx/${CUSTOM}/wx_scripts.conf
+else
+    echo "Missing /usr/local/etc/wx/wx_scripts.conf file, aborting..."
+    exit 1
+fi
+
+if [ !  -f $LOCAL/no_wxalert_msg ] ; then
+    touch $LOCAL/no_wxalert_msg
+fi
+
+if [ ! -f $LOCAL/disable.ul ] ; then
+    # create tts
+    echo "Weather Alert messages disabled." > $LOCAL/disable.txt
+    tts_audio.sh $LOCAL/disable.txt
+    rm -f $LOCAL/disable.txt
+fi  
+
+if [ -f $LOCAL/disable.ul ] ; then
+    # play
+    asterisk -rx "rpt localplay $NODE1 $LOCAL/disable"
+fi
+
+exit 0

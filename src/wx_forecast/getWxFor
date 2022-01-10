@@ -1,0 +1,97 @@
+#!/bin/bash
+#
+# getWxFor - allstar wxscripts
+#
+#  by w0anm
+#
+# This script gets the NWS zone forecast and converts to audio file
+#
+#####################
+# $Id: getWxFor 24 2015-03-27 00:53:24Z w0anm $
+
+# renice the proceses to a lower priority
+renice -n 19 -p $$
+
+WEATHER="/usr/local/etc/wx"
+
+# Load config file
+
+if [ -f ${WEATHER}/wx_scripts.conf ] ; then
+    source ${WEATHER}/wx_scripts.conf
+else
+    echo "Missing ${WEATHER}/wx_scripts.conf file, aborting..."
+    exit 1
+fi
+
+# if ZONE  not an argument, then error.
+if [ "$1" = "" ] ; then
+    echo "Missing Argument, need wx underground station id.."
+    echo
+    exit 1
+else
+    ZONE_FOR=$1
+fi
+if [ ! -d $WXFOR_SPOOLDIR/$ZONE_FOR ] ; then
+    mkdir -p $WXFOR_SPOOLDIR/$ZONE_FOR
+fi
+
+# Local noaa forecast text link
+# setup ZONE_FOR variable to convert to lower case and extract state
+LC_ZONE=`echo $ZONE_FOR | tr 'A-Z' 'a-z'`
+STATE=`echo $LC_ZONE | awk 'BEGIN { FS="z" } { print $1} '`
+
+# set URL for wget.  This is the url where the forcasts originate.
+URL="http://weather.noaa.gov/pub/data/forecasts/zone/${STATE}/${LC_ZONE}.txt"
+
+WX_TXT="wx_forecast.txt"
+WX_TXT_TMP="wx_forecast.tmp"
+WX_TXT_TMP2="wx_forecast2.tmp"
+
+###  ADD TTS CALL in function
+TextToSpeech () {
+  TTS_PROGRAM="/usr/local/bin/tts_audio.sh -v ${WXVOL} "
+  $TTS_PROGRAM $1
+  if [ "$DEBUG" = "2" ] ; then
+      echo "TextToSpeech=$1"
+      echo "Converted audio file=${1%.txt}.ul"
+  fi
+}
+
+###### End of Functions ######
+
+
+#----------------------------- Main program -----------------------------
+
+cd $WXFOR_SPOOLDIR/$ZONE_FOR
+$WGET -q $URL -O - > $WX_TXT_TMP
+
+# delete the first 10 lines before converting
+TOTAL_LINE=`wc $WX_TXT_TMP | awk '{print $1}'`
+LINE_DISP=`expr $TOTAL_LINE - 8`
+
+# sed -f ${WEATHER}/wxtext_conv.sed $WX_TXT_TMP > $WX_TXT
+
+tail -${LINE_DISP} $WX_TXT_TMP | sed "s/\./\. /g ; s/0S/0's/g ; s/\$\$\$/. . /g"  | sed -f ${WEATHER}/wxtext_conv.sed >  $WX_TXT
+
+
+# Do standard conversion..
+# first convert to lower case
+cat $WX_TXT | tr 'A-Z' 'a-z' > $WX_TXT_TMP 
+
+sed -f ${WEATHER}/wxtext_conv.sed $WX_TXT_TMP > $WX_TXT_TMP2
+
+# add heater and cat file
+echo "Weather forecast for " > $WX_TXT_TMP
+cat  $WX_TXT_TMP  $WX_TXT_TMP2 > $WX_TXT
+
+# clean up temp files
+rm $WX_TXT_TMP $WX_TXT_TMP2
+
+# convert
+
+TextToSpeech $WX_TXT forecast.ul
+
+
+exit 0
+
+# EOF

@@ -1,0 +1,68 @@
+Example of Underground wx report:
+
+
+Weather report for The Landings On The Crow ,  St Michael .
+Last Updated on September 6, 9:00 PM
+the wind was blowing at a speed of 4.9 miles per hour from north north west
+with wind gusts up to 5.8 miles per hour.
+The temperature was 72.1 degrees with a dewpoint of 56.5 degrees.
+The pressure was rising at 29.82 inches of mercury.
+The relative humidity was 58 percent.
+
+
+
+Weather Report
+
+Last Updated at xx:xx
+
+**** decision ****
+  The wind was blowing at a speed of
+      "4.9"
+  miles per hour from
+      "north north west"  (north+north+west)
+      "north east"
+      "est north east"
+      "east south east"
+      "south east"
+      "south south east"
+      "south south west
+      "south west"
+      "west south west"
+      "west north west:
+      "north west"
+      "north north west"
+
+  with wind guests up to
+      "5.8"
+  miles per hour.
+--or--
+  The wind was calm.
+
+---------------------------------------------------------
+
+The temperature was
+    "72.1"
+degrees with a dew point of
+    "56.6"
+degrees.
+
+The pressure was
+  raising at
+  falling at
+  steady at
+
+    "29.82"
+
+inches of mercury.
+
+The relative humidity was "58" percent.
+
+The wind was blowing at a speed of
+with wind guests up to
+
+
+Need a numbers routine, like time, to setup the temperature, pressure, wind speed.
+
+Create a script to play gsm combinations via local node.
+
+Script to take mp3 to gsm

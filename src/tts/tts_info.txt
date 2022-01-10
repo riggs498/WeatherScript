@@ -1,0 +1,41 @@
+# README.txt - allstar w/google tts
+#
+# README.txt v0.1
+#  (wx_scripts - release 0.3)
+#  by w0anm
+
+
+==== Additonal Notes Regarding "tts_audio.sh" Script ====
+
+I now have a wrapper program that will lock the program so that only one 
+instance can be run at a time to prevent issues with the Text To Speech (TTS). 
+In addiion, For the TTS scripts, it's now a separate script that you can call.  
+It will return the ulaw file name once it's converted.  There is one caveat, 
+the line needs to be less then 100 characters. If the sentence goes over 
+100 characters and you are using the -s option, there is a pause (like a 
+period) in the audio. It's important to keep your sentenances short.  If 
+you are not using the -s option, then the line that has over 100 characters
+will not be converted.
+
+There is also an option to split the text file so that it will split on 
+periods and if the line length is greater that 100. Keep in mind that it 
+the line is split due to being greater that 100, it will have a pause in 
+the audio.
+
+This script can be used to create other audio files.  The syntax is:
+
+   tts_audio.sh [-s] [FILE]  
+
+      where -s splits the file at periods and long lines.
+
+This script will return a path/file to the converted ulaw audio file.
+
+
+If you run into issues, please let me know.
+
+73,
+
+Chris,  W0ANM
+
+
+

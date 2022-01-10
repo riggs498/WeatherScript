@@ -1,0 +1,10 @@
+- Add check for enable/disable_wx_alertmsg for arguments.
+
+- give examples in code files for both a cron and rpt.conf entries. (done)
+
+- change enable/disable_wx_alertmsg to include node arguement? (not needed)
+
+- update precipitation changes (from acid release)
+
+
+
